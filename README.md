@@ -26,4 +26,10 @@ This project is an Electron desktop application that allows users to browse thei
 
 This project was developed using Claude Code as an AI-assisted programming tool. Rather than simply generating code, I focused on testing functionality, debugging issues, and understanding the project's architecture as it evolved. Through this project, I became more comfortable reading unfamiliar code, tracing bugs, and iteratively improving software.
 
+### How to Run This Project Locally
+* Install Node.js
+* git clone https://github.com/Ydndaniel/Disk-Usage-Analyzer.git
+* cd Disk-Usage-Analyzer
+* npm install
+* npm start
 
