@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Disk Cleaner</title>
+  <link rel="stylesheet" href="styles/main.css">
+  <link rel="stylesheet" href="styles/dashboard.css">
+  <link rel="stylesheet" href="styles/browser.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-left">
+      <button id="btn-back" class="btn-back" disabled>&#8592; Back</button>
+      <h1 class="app-title">Disk Cleaner</h1>
+    </div>
+    <button id="btn-refresh" class="btn-refresh">&#8635; Refresh</button>
+  </header>
+
+  <section id="dashboard-view">
+    <div class="section-title">Your Drives</div>
+    <div id="drives-grid" class="drives-grid">
+      <div class="loading">Loading drives...</div>
+    </div>
+  </section>
+
+  <section id="browser-view" class="hidden">
+    <nav id="breadcrumb" class="breadcrumb"></nav>
+    <div class="browser-info">
+      <span id="item-count" class="item-count"></span>
+    </div>
+    <div id="file-list" class="file-list">
+      <div class="loading">Loading...</div>
+    </div>
+  </section>
+
+  <script src="scripts/app.js"></script>
+  <script src="scripts/dashboard.js"></script>
+  <script src="scripts/browser.js"></script>
+</body>
+</html>
