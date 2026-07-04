@@ -1,0 +1,12 @@
+{
+  "name": "disk-cleaner",
+  "version": "1.0.0",
+  "description": "TreeSize-like disk usage explorer for Windows",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^35.7.5"
+  }
+}

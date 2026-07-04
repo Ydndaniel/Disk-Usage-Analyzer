@@ -1,0 +1,136 @@
+const { app, BrowserWindow, ipcMain } = require('electron');
+const { execFile } = require('child_process');
+const { promises: fs } = require('fs');
+const path = require('path');
+
+function createWindow() {
+  const win = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    minWidth: 800,
+    minHeight: 600,
+    backgroundColor: '#1a1a2e',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+
+  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+}
+
+app.whenReady().then(() => {
+  createWindow();
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+ipcMain.handle('get-drives', () => {
+  return new Promise((resolve, reject) => {
+    execFile('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      'Get-WmiObject Win32_LogicalDisk | Select-Object DeviceID,Size,FreeSpace,VolumeName,DriveType | ConvertTo-Json'
+    ], { timeout: 15000 }, (err, stdout, stderr) => {
+      if (err) return reject(err);
+      try {
+        let data = JSON.parse(stdout.trim());
+        if (!Array.isArray(data)) data = [data];
+        const drives = data
+          .filter(d => d.Size != null && d.DriveType !== 5)
+          .map(d => ({
+            DeviceID: d.DeviceID,
+            VolumeName: d.VolumeName || '',
+            DriveType: d.DriveType,
+            Size: d.Size,
+            FreeSpace: d.FreeSpace,
+            UsedSpace: d.Size - d.FreeSpace
+          }));
+        resolve(drives);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  });
+});
+
+ipcMain.handle('get-directory-contents', async (event, dirPath) => {
+  try {
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    const results = await Promise.allSettled(
+      entries.map(async (entry) => {
+        const fullPath = path.join(dirPath, entry.name);
+        try {
+          const stat = await fs.stat(fullPath);
+          return {
+            name: entry.name,
+            path: fullPath,
+            size: stat.size,
+            isDirectory: entry.isDirectory(),
+            isFile: entry.isFile(),
+            lastModified: stat.mtime.toISOString(),
+            accessible: true
+          };
+        } catch (err) {
+          return {
+            name: entry.name,
+            path: fullPath,
+            size: 0,
+            isDirectory: entry.isDirectory(),
+            isFile: entry.isFile(),
+            lastModified: null,
+            accessible: false,
+            error: err.code
+          };
+        }
+      })
+    );
+
+    const items = results
+      .filter(r => r.status === 'fulfilled')
+      .map(r => r.value);
+
+    items.sort((a, b) => {
+      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+      return b.size - a.size;
+    });
+
+    return { path: dirPath, items, error: null };
+  } catch (err) {
+    return { path: dirPath, items: [], error: err.code || 'UNKNOWN' };
+  }
+});
+
+ipcMain.handle('get-parent-path', (event, currentPath) => {
+  const parent = path.dirname(currentPath);
+  if (parent === currentPath) return null;
+  return parent;
+});
+
+async function calcFolderSize(dirPath) {
+  let total = 0;
+  try {
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    await Promise.all(entries.map(async (entry) => {
+      const fullPath = path.join(dirPath, entry.name);
+      try {
+        if (entry.isDirectory()) {
+          total += await calcFolderSize(fullPath);
+        } else {
+          const stat = await fs.stat(fullPath);
+          total += stat.size;
+        }
+      } catch (_) {}
+    }));
+  } catch (_) {}
+  return total;
+}
+
+ipcMain.handle('get-folder-size', (event, dirPath) => calcFolderSize(dirPath));
