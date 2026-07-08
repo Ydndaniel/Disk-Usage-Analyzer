@@ -115,22 +115,25 @@ ipcMain.handle('get-parent-path', (event, currentPath) => {
 });
 
 async function calcFolderSize(dirPath) {
-  let total = 0;
   try {
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
-    await Promise.all(entries.map(async (entry) => {
+    const sizes = await Promise.all(entries.map(async (entry) => {
       const fullPath = path.join(dirPath, entry.name);
       try {
         if (entry.isDirectory()) {
-          total += await calcFolderSize(fullPath);
+          return await calcFolderSize(fullPath);
         } else {
           const stat = await fs.stat(fullPath);
-          total += stat.size;
+          return stat.size;
         }
-      } catch (_) {}
+      } catch (_) {
+        return 0;
+      }
     }));
-  } catch (_) {}
-  return total;
+    return sizes.reduce((sum, size) => sum + size, 0);
+  } catch (_) {
+    return 0;
+  }
 }
 
 ipcMain.handle('get-folder-size', (event, dirPath) => calcFolderSize(dirPath));
