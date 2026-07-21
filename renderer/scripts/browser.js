@@ -3,6 +3,11 @@ const Browser = (() => {
   const fileListEl = document.getElementById('file-list');
   const itemCountEl = document.getElementById('item-count');
   const btnBack = document.getElementById('btn-back');
+  const btnFindDuplicates = document.getElementById('btn-find-duplicates');
+  const duplicatesPanel = document.getElementById('duplicates-panel');
+  const duplicatesSummaryEl = document.getElementById('duplicates-summary');
+  const duplicatesGroupsEl = document.getElementById('duplicates-groups');
+  const btnCloseDuplicates = document.getElementById('btn-close-duplicates');
 
   let breadcrumb = [];
   let currentPath = null;
@@ -131,11 +136,79 @@ const Browser = (() => {
     });
   }
 
+  function hideDuplicatesPanel() {
+    duplicatesPanel.classList.add('hidden');
+    duplicatesGroupsEl.innerHTML = '';
+  }
+
+  function clearDuplicateBadges() {
+    fileListEl.querySelectorAll('.file-row.is-duplicate')
+      .forEach(row => row.classList.remove('is-duplicate'));
+  }
+
+  function renderDuplicatesPanel(result) {
+    if (result.error) {
+      duplicatesSummaryEl.textContent = `Error: ${result.error}`;
+      duplicatesPanel.classList.remove('hidden');
+      return;
+    }
+    if (result.groups.length === 0) {
+      duplicatesSummaryEl.textContent = 'No duplicate files found in this folder.';
+      duplicatesPanel.classList.remove('hidden');
+      return;
+    }
+
+    duplicatesSummaryEl.textContent =
+      `${result.groups.length} duplicate group${result.groups.length !== 1 ? 's' : ''} — ${formatSize(result.totalWastedBytes)} reclaimable`;
+
+    duplicatesGroupsEl.innerHTML = result.groups.map(group => `
+      <div class="duplicate-group">
+        <div class="duplicate-group-meta">${group.files.length} copies × ${formatSize(group.size)}</div>
+        ${group.files.map(f => `<div class="duplicate-file" title="${f.path}">${f.name}</div>`).join('')}
+      </div>
+    `).join('');
+
+    duplicatesPanel.classList.remove('hidden');
+
+    const dupPaths = new Set(result.groups.flatMap(g => g.files.map(f => f.path)));
+    dupPaths.forEach(p => {
+      const row = fileListEl.querySelector(`[data-path="${CSS.escape(p)}"]`);
+      if (row) row.classList.add('is-duplicate');
+    });
+  }
+
+  async function findDuplicates() {
+    if (!currentPath) return;
+    const token = renderToken;
+
+    hideDuplicatesPanel();
+    clearDuplicateBadges();
+    btnFindDuplicates.disabled = true;
+    btnFindDuplicates.textContent = 'Scanning...';
+
+    try {
+      const result = await window.diskAPI.findDuplicates(currentPath);
+      if (renderToken !== token) return;
+      renderDuplicatesPanel(result);
+    } catch (err) {
+      if (renderToken !== token) return;
+      duplicatesSummaryEl.textContent = `Error: ${err.message}`;
+      duplicatesPanel.classList.remove('hidden');
+    } finally {
+      if (renderToken === token) {
+        btnFindDuplicates.disabled = false;
+        btnFindDuplicates.textContent = 'Find Duplicates';
+      }
+    }
+  }
+
   async function loadPath(dirPath) {
     currentPath = dirPath;
     currentItems = [];
     renderToken++;
     const token = renderToken;
+    hideDuplicatesPanel();
+    clearDuplicateBadges();
 
     fileListEl.innerHTML = '<div class="loading">Loading...</div>';
     renderBreadcrumb();
@@ -177,6 +250,9 @@ const Browser = (() => {
     breadcrumb = [{ name: driveName, path: rootPath }];
     loadPath(rootPath);
   }
+
+  btnFindDuplicates.addEventListener('click', findDuplicates);
+  btnCloseDuplicates.addEventListener('click', hideDuplicatesPanel);
 
   return { load, goBack, reload };
 })();
