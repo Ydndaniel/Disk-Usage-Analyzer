@@ -1,7 +1,8 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const { execFile } = require('child_process');
-const { promises: fs } = require('fs');
+const { promises: fs, createReadStream } = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -137,3 +138,71 @@ async function calcFolderSize(dirPath) {
 }
 
 ipcMain.handle('get-folder-size', (event, dirPath) => calcFolderSize(dirPath));
+
+function hashFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = createReadStream(filePath);
+    stream.on('data', chunk => hash.update(chunk));
+    stream.on('error', reject);
+    stream.on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
+async function findDuplicatesInDir(dirPath) {
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  const fileEntries = entries.filter(entry => entry.isFile());
+
+  const stats = await Promise.all(fileEntries.map(async (entry) => {
+    const fullPath = path.join(dirPath, entry.name);
+    try {
+      const stat = await fs.stat(fullPath);
+      return { name: entry.name, path: fullPath, size: stat.size };
+    } catch (_) {
+      return null;
+    }
+  }));
+
+  const bySize = new Map();
+  for (const file of stats) {
+    if (!file || file.size === 0) continue;
+    if (!bySize.has(file.size)) bySize.set(file.size, []);
+    bySize.get(file.size).push(file);
+  }
+  const candidates = [...bySize.values()].filter(group => group.length > 1).flat();
+
+  const hashed = await Promise.all(candidates.map(async (file) => {
+    try {
+      return { ...file, hash: await hashFile(file.path) };
+    } catch (_) {
+      return null;
+    }
+  }));
+
+  const byHash = new Map();
+  for (const file of hashed) {
+    if (!file) continue;
+    if (!byHash.has(file.hash)) byHash.set(file.hash, []);
+    byHash.get(file.hash).push({ name: file.name, path: file.path, size: file.size });
+  }
+
+  return [...byHash.entries()]
+    .filter(([, files]) => files.length > 1)
+    .map(([hash, files]) => ({
+      hash,
+      size: files[0].size,
+      files,
+      wastedBytes: files[0].size * (files.length - 1)
+    }))
+    .sort((a, b) => b.wastedBytes - a.wastedBytes);
+}
+
+ipcMain.handle('find-duplicates', async (event, dirPath) => {
+  try {
+    const groups = await findDuplicatesInDir(dirPath);
+    const totalWastedBytes = groups.reduce((sum, group) => sum + group.wastedBytes, 0);
+    return { path: dirPath, groups, totalWastedBytes, error: null };
+  } catch (err) {
+    return { path: dirPath, groups: [], totalWastedBytes: 0, error: err.code || 'UNKNOWN' };
+  }
+});
